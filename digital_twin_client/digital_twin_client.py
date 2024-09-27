@@ -96,7 +96,7 @@ class DigitalTwinClientNode(Node):
             self.pressure_image_callback,
             10)
         self.pressure_value_subscription = self.create_subscription(
-            String,
+            Float64,
             'pressure_result_value',
             self.pressure_value_callback,
             10)
@@ -109,7 +109,7 @@ class DigitalTwinClientNode(Node):
             self.rust_image_callback,
             10)
         self.rust_value_subscription = self.create_subscription(
-            String,
+            Float64,
             'rust_result_value',
             self.rust_value_callback,
             10)
@@ -122,7 +122,7 @@ class DigitalTwinClientNode(Node):
             self.crack_image_callback,
             10)
         self.crack_value_subscription = self.create_subscription(
-            String,
+            Float64,
             'crack_result_value',
             self.crack_value_callback,
             10)
@@ -135,7 +135,7 @@ class DigitalTwinClientNode(Node):
             self.temperature_image_callback,
             10)
         self.temperature_value_subscription = self.create_subscription(
-            String,
+            Float64,
             'temperature_result_value',
             self.temperature_value_callback,
             10)
