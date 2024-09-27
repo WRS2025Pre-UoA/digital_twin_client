@@ -1,6 +1,7 @@
 import requests
 import json
 
+
 class Client:
     def __init__(self, host, robot_id, mac_id, logger=print):
         self.host = host
@@ -23,6 +24,26 @@ class Client:
 
     def meter_request(self, id, value, img):
         print(id, value)
+
+        url = 'http://'+self.host+'/rms_wrs/api/set_eqpt_val.php'
+        values = {
+            "eqpt_nm": id,
+            "value": value,
+            "mac_id": self.mac_id
+        }
+        files = {'image': ("meter_result.jpg", img)}
+
+        try:
+            response = requests.post(url, files=files, data=values)
+            if response.status_code != requests.codes.ok:
+                raise Exception(
+                    f"Request Status Error: {response.status_code}")
+            if json.loads(response.text)['status'] == 'success':
+                print('post success')
+            else:
+                raise Exception(f"Request Error: {response.text}")
+        except Exception as e:
+            print(e)
 
     def rust_request(self, id, value, img):
         print(id, value)
