@@ -33,9 +33,9 @@ class DrawTool:
         cv2.putText(self.image, text, (x, y),
                     cv2.FONT_HERSHEY_SIMPLEX, size, color, thickness)
 
-    def draw_button(self, button, text, color=(255, 255, 255), thickness=-1, text_size=2, text_color=(0, 0, 0)):
+    def draw_button(self, button, text, color=(255, 255, 255), thickness=-1,line_type=cv2.LINE_8, text_size=2, text_color=(0, 0, 0),text_thickness=1):
         bottom_right = tuple(pos+size for pos, size in zip(button.pos, button.size))
-        cv2.rectangle(self.image, button.pos, bottom_right, color, thickness)
+        cv2.rectangle(self.image, button.pos, bottom_right, color, thickness,line_type)
 
         text_pos = tuple(pos+size//2 for pos, size in zip(button.pos, button.size))
-        self.draw_at_text(text, text_pos, text_size, text_color)
+        self.draw_at_text(text, text_pos, text_size, text_color, text_thickness)

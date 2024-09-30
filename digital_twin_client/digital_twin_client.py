@@ -185,18 +185,18 @@ class DigitalTwinClientNode(Node):
                 break
 
             # 描画
-            tool = DrawTool(1280, 720, (127, 127, 127))
+            tool = DrawTool(1280, 720, (0, 0, 0))
 
             # 現在の状態
             status_texts = ["none", "meter",
                             "rust", "crack", "temperature"]
             current_status = status_texts[self.kind]
-            tool.draw_at_text(current_status, (Width//2, 15), 2)
+            tool.draw_at_text(current_status, (Width//2, 55), 2,thickness=2)
 
             # QRの値とその他の値
-            tool.draw_at_text(f"QR: {self.qr_value}", (1*Width//4, 50), 1)
+            tool.draw_at_text(f"QR: {self.qr_value}", (1*Width//4, 145),thickness=2)
             tool.draw_at_text(
-                f"{current_status}: {result_value}", (3*Width//4, 50), 1)
+                f"{current_status}: {result_value}", (3*Width//4, 145),thickness=2)
 
             # QR画像の表示
             target_width = 4*Width//10
@@ -206,18 +206,18 @@ class DigitalTwinClientNode(Node):
             size = (w*target_height//h, target_height)
             if h*target_width <= target_height*w:
                 size = (target_width, h*target_width//w)
-            tool.draw_image(self.qr_image, (20, 75), size)
+            tool.draw_image(self.qr_image, (40, 175), size)
 
             # その他の結果の表示
             h, w = result_image.shape[:2]
             size = (w*target_height//h, target_height)
             if h*target_width <= target_height*w:
                 size = (target_width, h*target_width//w)
-            tool.draw_image(result_image, (Width//2+20, 75), size)
+            tool.draw_image(result_image, (Width//2+40, 175), size)
 
             # 送信ボタン
-            tool.draw_button(cancel_button, "Cancel", thickness=2)
-            tool.draw_button(send_button, "Send", thickness=2)
+            tool.draw_button(cancel_button, "Cancel", thickness=cv2.FILLED,text_color=(0,0,255),color=(255,255,255),text_thickness=2)
+            tool.draw_button(send_button, "Send", thickness=cv2.FILLED,text_color=(0,0,255),color=(255,255,255),text_thickness=2)
 
             # 表示とマウスの設定
             cv2.imshow("send", tool.image)
