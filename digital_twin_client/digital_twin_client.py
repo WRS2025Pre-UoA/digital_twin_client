@@ -51,6 +51,15 @@ class DigitalTwinClientNode(Node):
             self.send_callback,
             1)
 
+        # 現在の結果のPublish
+        self.timer = self.create_timer(0.1, self.publish_current_result)
+        self.result_status_publisher = self.create_publisher(
+            String, 'current_result_status', 1)
+        self.result_value_publisher = self.create_publisher(
+            Float64, 'current_result_value', 1)
+        self.result_qr_publisher = self.create_publisher(
+            String, 'current_result_qr', 1)
+
         # 結果データの受け取りの初期化
         self.bridge = CvBridge()
 
@@ -224,6 +233,24 @@ class DigitalTwinClientNode(Node):
             cv2.setMouseCallback('send', is_click, clicked_pos)
             cv2.waitKey(10)
         cv2.destroyAllWindows()
+
+    # 現在保持している結果のPublish
+    def publish_current_result(self):
+        status_texts = ["None", "Meter",
+                        "Rust", "Crack", "Temperature"]
+        result_values = [-100.0, self.pressure_value, self.rust_value,
+                         self.crack_value, self.temperature_value]
+
+        status_msg = String()
+        value_msg = Float64()
+        qr_msg = String()
+        status_msg.data = status_texts[self.kind]
+        value_msg.data = result_values[self.kind]
+        qr_msg.data = self.qr_value
+
+        self.result_status_publisher.publish(status_msg)
+        self.result_value_publisher.publish(value_msg)
+        self.result_qr_publisher.publish(qr_msg)
 
     # データの受け取り
     def qr_image_callback(self, msg):
