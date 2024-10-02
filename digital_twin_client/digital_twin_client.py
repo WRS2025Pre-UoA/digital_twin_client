@@ -18,6 +18,13 @@ from digital_twin_client.client import Client
 from digital_twin_client.gui_tool import Button, DrawTool
 
 
+def image_resize(image, width=1280):
+    h, w = image.shape[:2]
+    height = round(h * (width / w))
+    image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
+    return image
+
+
 def save_local(qr, value, img, robot_id, result_folder='save_folder/', logger=print):
     csv_file = os.path.join(result_folder, 'data.csv')
     image_directory = os.path.join(result_folder, 'image')
@@ -74,6 +81,10 @@ class ResultKind(IntEnum):
     RUST = auto()
     CRACK = auto()
     TEMP = auto()
+    BULB = auto()
+    ENVIRONMENT = auto()
+    VICTIM = auto()
+    DEBRIS = auto()
 
 
 class DigitalTwinClientNode(Node):
@@ -113,7 +124,7 @@ class DigitalTwinClientNode(Node):
         self.result_status_publisher = self.create_publisher(
             String, 'current_result_status', 1)
         self.result_value_publisher = self.create_publisher(
-            Float64, 'current_result_value', 1)
+            String, 'current_result_value', 1)
         self.result_qr_publisher = self.create_publisher(
             String, 'current_result_qr', 1)
 
@@ -162,15 +173,15 @@ class DigitalTwinClientNode(Node):
             10)
 
         self.crack_image = self.none_image.copy()
-        self.crack_value = 0.0
+        self.crack_value = ""
         self.crack_image_subscription = self.create_subscription(
             Image,
             'crack_result_image',
             self.crack_image_callback,
             10)
         self.crack_value_subscription = self.create_subscription(
-            Float64,
-            'crack_result_value',
+            String,
+            'crack_result_txt',
             self.crack_value_callback,
             10)
 
@@ -185,6 +196,44 @@ class DigitalTwinClientNode(Node):
             Float64,
             'temperature_result_value',
             self.temperature_value_callback,
+            10)
+
+        self.bulb_image = self.none_image.copy()
+        self.bulb_value = ""
+        self.bulb_image_subscription = self.create_subscription(
+            Image,
+            'bulb_param_image',
+            self.bulb_image_callback,
+            10)
+        self.bulb_value_subscription = self.create_subscription(
+            String,
+            'bulb_param_result',
+            self.bulb_value_callback,
+            10)
+
+        self.environment_image = self.none_image.copy()
+        self.victim_image = self.none_image.copy()
+        self.debris_image = self.none_image.copy()
+        self.photo_text = ""
+        self.environment_image_subscription = self.create_subscription(
+            Image,
+            'environment_image',
+            self.environment_image_callback,
+            10)
+        self.victim_image_subscription = self.create_subscription(
+            Image,
+            'victim_image',
+            self.victim_image_callback,
+            10)
+        self.debris_image_subscription = self.create_subscription(
+            Image,
+            'debris_image',
+            self.debris_image_callback,
+            10)
+        self.photo_text_subscription = self.create_subscription(
+            String,
+            'photo_txt_result',
+            self.photo_text_callback,
             10)
 
     # GUIやメイン処理周り
@@ -207,11 +256,15 @@ class DigitalTwinClientNode(Node):
         while True:
             # 各結果の配列
             result_values = ["", self.pressure_value, self.rust_value,
-                             self.crack_value, self.temperature_value]
+                             self.crack_value, self.temperature_value, self.bulb_value,
+                             self.photo_text, self.photo_text, self.photo_text
+                             ]
             result_value = result_values[self.kind]
 
-            result_images = [self.none_image, self.pressure_image,
-                             self.rust_image, self.crack_image, self.temperature_image]
+            result_images = [self.none_image, self.pressure_image, self.rust_image,
+                             self.crack_image, self.temperature_image, self.bulb_image,
+                             self.environment_image, self.victim_image, self.debris_image,
+                             ]
             result_image = result_images[self.kind]
 
             # 結果が取得できているか
@@ -222,9 +275,10 @@ class DigitalTwinClientNode(Node):
             # 送信ボタンが押されたかの判定
             if is_available_sending and send_button.is_clicked(clicked_pos):
                 # jpegに変換(サイズ変更が必要かも)
+                before_converted_image = image_resize(result_image.copy())
                 encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100]
                 result, encoded_image = cv2.imencode(
-                    '.jpg', result_image, encode_param)
+                    '.jpg', before_converted_image, encode_param)
                 if False == result:
                     self.get_logger().error('could not encode image!')
                     break
@@ -236,13 +290,11 @@ class DigitalTwinClientNode(Node):
 
                 # 送信
                 if self.client != None:
-                    send_funcs = [self.client.meter_request, self.client.rust_request,
-                                  self.client.crack_request, self.client.temperature_request]
                     try:
-                        send_funcs[self.kind-1](self.qr_value,
-                                                result_value, image_sended)
+                        self.client.request(self.qr_value,
+                                            str(result_value), image_sended)
                     except Exception as e:
-                        self.get_logger().error("Faild sending to RMS:", str(e))
+                        self.get_logger().error("Faild sending to RMS: "+str(e))
                 else:
                     self.get_logger().error("No connection to RMS")
 
@@ -263,8 +315,10 @@ class DigitalTwinClientNode(Node):
             tool = DrawTool(1280, 720, (0, 0, 0))
 
             # 現在の状態
-            status_texts = ["none", "meter",
-                            "rust", "crack", "temperature"]
+            status_texts = ["none", "meter", "rust",
+                            "crack", "temperature", "bulb",
+                            "environment", "victim", "debris",
+                            ]
             current_status = status_texts[self.kind]
             tool.draw_at_text(current_status, (Width//2, 55), 2, thickness=2)
 
@@ -305,16 +359,19 @@ class DigitalTwinClientNode(Node):
 
     # 現在保持している結果のPublish
     def publish_current_result(self):
-        status_texts = ["None", "Meter",
-                        "Rust", "Crack", "Temperature"]
+        status_texts = ["None", "Meter", "Rust",
+                        "Crack", "Temperature", "Bulb",
+                        "Environment", "Victim", "Debris",
+                        ]
         result_values = [-100.0, self.pressure_value, self.rust_value,
-                         self.crack_value, self.temperature_value]
+                         self.crack_value, self.temperature_value, self.bulb_image,
+                         self.photo_text, self.photo_text, self.photo_text]
 
         status_msg = String()
-        value_msg = Float64()
+        value_msg = String()
         qr_msg = String()
         status_msg.data = status_texts[self.kind]
-        value_msg.data = result_values[self.kind]
+        value_msg.data = str(result_values[self.kind])
         qr_msg.data = self.qr_value
 
         self.result_status_publisher.publish(status_msg)
@@ -327,7 +384,7 @@ class DigitalTwinClientNode(Node):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
         self.qr_image = cv_image
 
@@ -340,7 +397,7 @@ class DigitalTwinClientNode(Node):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
         self.kind = ResultKind.METER
         self.pressure_image = cv_image
@@ -354,7 +411,7 @@ class DigitalTwinClientNode(Node):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
         self.kind = ResultKind.RUST
         self.rust_image = cv_image
@@ -368,7 +425,7 @@ class DigitalTwinClientNode(Node):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
         self.kind = ResultKind.CRACK
         self.crack_image = cv_image
@@ -383,7 +440,7 @@ class DigitalTwinClientNode(Node):
             cv_image = self.bridge.imgmsg_to_cv2(msg, "mono8")
             cv_image = cv2.cvtColor(cv_image, cv2.COLOR_GRAY2BGR)
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
         self.kind = ResultKind.TEMP
         self.temperature_image = cv_image
@@ -391,6 +448,54 @@ class DigitalTwinClientNode(Node):
     def temperature_value_callback(self, msg):
         self.get_logger().info("get temperature value")
         self.temperature_value = msg.data
+
+    def bulb_image_callback(self, msg):
+        self.get_logger().info("get bulb image")
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            self.get_logger().error(e)
+            return
+        self.kind = ResultKind.BULB
+        self.bulb_image = cv_image
+
+    def bulb_value_callback(self, msg):
+        self.get_logger().info("get temperature value")
+        self.bulb_value = msg.data
+
+    def environment_image_callback(self, msg):
+        self.get_logger().info("get environment image")
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            self.get_logger().error(e)
+            return
+        self.kind = ResultKind.ENVIRONMENT
+        self.environment_image = cv_image
+
+    def victim_image_callback(self, msg):
+        self.get_logger().info("get victim image")
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            self.get_logger().error(e)
+            return
+        self.kind = ResultKind.VICTIM
+        self.victim_image = cv_image
+
+    def debris_image_callback(self, msg):
+        self.get_logger().info("get debris image")
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            self.get_logger().error(e)
+            return
+        self.kind = ResultKind.DEBRIS
+        self.debris_image = cv_image
+
+    def photo_text_callback(self, msg):
+        self.get_logger().info("get photo text")
+        self.photo_text = msg.data
 
 
 def main(args=None):

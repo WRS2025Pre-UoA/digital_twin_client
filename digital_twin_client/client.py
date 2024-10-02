@@ -22,7 +22,7 @@ class Client:
         else:
             raise Exception(f"Request Error: {response.json()}")
 
-    def meter_request(self, id, value, img, logger=print):
+    def request(self, id, value, img, logger=print):
         logger(id, value)
 
         url = 'http://'+self.host+'/rms_wrs/api/set_eqpt_val.php'
@@ -41,12 +41,3 @@ class Client:
             logger('post success')
         else:
             raise Exception(f"Request Error: {response.text}")
-
-    def rust_request(self, id, value, img):
-        print(id, value)
-
-    def crack_request(self, id, value, img):
-        print(id, value)
-
-    def temperature_request(self, id, value, img):
-        print(id, value)
