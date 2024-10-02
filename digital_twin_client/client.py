@@ -22,8 +22,8 @@ class Client:
         else:
             raise Exception(f"Request Error: {response.json()}")
 
-    def meter_request(self, id, value, img):
-        print(id, value)
+    def meter_request(self, id, value, img, logger=print):
+        logger(id, value)
 
         url = 'http://'+self.host+'/rms_wrs/api/set_eqpt_val.php'
         values = {
@@ -33,17 +33,14 @@ class Client:
         }
         files = {'image': ("meter_result.jpg", img)}
 
-        try:
-            response = requests.post(url, files=files, data=values)
-            if response.status_code != requests.codes.ok:
-                raise Exception(
-                    f"Request Status Error: {response.status_code}")
-            if json.loads(response.text)['status'] == 'success':
-                print('post success')
-            else:
-                raise Exception(f"Request Error: {response.text}")
-        except Exception as e:
-            print(e)
+        response = requests.post(url, files=files, data=values)
+        if response.status_code != requests.codes.ok:
+            raise Exception(
+                f"Request Status Error: {response.status_code}")
+        if json.loads(response.text)['status'] == 'success':
+            logger('post success')
+        else:
+            raise Exception(f"Request Error: {response.text}")
 
     def rust_request(self, id, value, img):
         print(id, value)

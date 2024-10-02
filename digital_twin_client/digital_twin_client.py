@@ -10,9 +10,62 @@ import numpy as np
 
 import uuid
 from enum import IntEnum, auto
+import csv
+import os
+from datetime import datetime
 
 from digital_twin_client.client import Client
 from digital_twin_client.gui_tool import Button, DrawTool
+
+
+def save_local(qr, value, img, robot_id, result_folder='save_folder/', logger=print):
+    csv_file = os.path.join(result_folder, 'data.csv')
+    image_directory = os.path.join(result_folder, 'image')
+
+    # result_folderが存在しない場合は自動作成
+    if not os.path.exists(result_folder):
+        os.makedirs(result_folder)
+        logger(f"{result_folder} を作成しました。")
+
+    # CSVファイルが存在しない場合は作成し、ヘッダーを書き込み
+    if not os.path.exists(csv_file):
+        with open(csv_file, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Timestamp', 'QR', 'Value',
+                            'Image Filename', 'Robot ID'])
+        logger(f"{csv_file} を作成し、ヘッダーを追加しました。")
+
+    # imageディレクトリが存在しない場合は作成
+    if not os.path.exists(image_directory):
+        os.makedirs(image_directory)
+        logger(f"{image_directory} ディレクトリを作成しました。")
+
+    # タイムスタンプの生成（ISO 8601形式）
+    timestamp = datetime.now().isoformat()
+
+    # ディレクトリ内の画像ファイル数をカウントして次のファイル名を決定
+    existing_images = [f for f in os.listdir(
+        image_directory) if f.endswith('.jpg')]
+    row_count = len(existing_images) + 1  # 現在の画像数に1を足して次の番号を決定
+
+    # 画像ファイル名の作成
+    image_filename = f'result_{row_count}.jpg'
+    image_path = os.path.join(image_directory, image_filename)
+    logger(f"{image_directory}に画像ファイル{image_filename}を生成しました。")
+
+    # 画像ファイルの保存
+    cv2.imwrite(image_path, img)
+
+    # CSVファイルへの追記モードで書き込み
+    with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            timestamp,
+            qr,
+            value,
+            image_filename,
+            robot_id
+        ])
 
 
 class ResultKind(IntEnum):
@@ -35,13 +88,17 @@ class DigitalTwinClientNode(Node):
 
         host = self.get_parameter(
             'host').get_parameter_value().string_value
-        robot_id = self.get_parameter(
+        self.robot_id = self.get_parameter(
             'robot_id').get_parameter_value().string_value
         mac_id = self.get_parameter(
             'mac_id').get_parameter_value().string_value
 
-        self.client = Client(
-            host, robot_id, mac_id, self.get_logger().info)
+        try:
+            self.client = Client(
+                host, self.robot_id, mac_id, self.get_logger().info)
+        except Exception as e:
+            self.client = None
+            self.get_logger().error(str(e))
 
         # GUIやメイン処理周りの初期化
         self.kind = ResultKind.NONE
@@ -164,9 +221,6 @@ class DigitalTwinClientNode(Node):
 
             # 送信ボタンが押されたかの判定
             if is_available_sending and send_button.is_clicked(clicked_pos):
-                send_funcs = [self.client.meter_request, self.client.rust_request,
-                              self.client.crack_request, self.client.temperature_request]
-
                 # jpegに変換(サイズ変更が必要かも)
                 encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100]
                 result, encoded_image = cv2.imencode(
@@ -176,9 +230,21 @@ class DigitalTwinClientNode(Node):
                     break
                 image_sended = encoded_image.tobytes()
 
+                # ローカルへの保存
+                save_local(self.qr_value, str(result_value), result_image,
+                           self.robot_id, logger=self.get_logger().info)
+
                 # 送信
-                send_funcs[self.kind-1](self.qr_value,
-                                        result_value, image_sended)
+                if self.client != None:
+                    send_funcs = [self.client.meter_request, self.client.rust_request,
+                                  self.client.crack_request, self.client.temperature_request]
+                    try:
+                        send_funcs[self.kind-1](self.qr_value,
+                                                result_value, image_sended)
+                    except Exception as e:
+                        self.get_logger().error("Faild sending to RMS:", str(e))
+                else:
+                    self.get_logger().error("No connection to RMS")
 
                 # 初期化
                 self.kind = ResultKind.NONE
@@ -200,12 +266,13 @@ class DigitalTwinClientNode(Node):
             status_texts = ["none", "meter",
                             "rust", "crack", "temperature"]
             current_status = status_texts[self.kind]
-            tool.draw_at_text(current_status, (Width//2, 55), 2,thickness=2)
+            tool.draw_at_text(current_status, (Width//2, 55), 2, thickness=2)
 
             # QRの値とその他の値
-            tool.draw_at_text(f"QR: {self.qr_value}", (1*Width//4, 145),thickness=2)
+            tool.draw_at_text(f"QR: {self.qr_value}",
+                              (1*Width//4, 145), thickness=2)
             tool.draw_at_text(
-                f"{current_status}: {result_value}", (3*Width//4, 145),thickness=2)
+                f"{current_status}: {result_value}", (3*Width//4, 145), thickness=2)
 
             # QR画像の表示
             target_width = 4*Width//10
@@ -225,8 +292,10 @@ class DigitalTwinClientNode(Node):
             tool.draw_image(result_image, (Width//2+40, 175), size)
 
             # 送信ボタン
-            tool.draw_button(cancel_button, "Cancel", thickness=cv2.FILLED,text_color=(0,0,255),color=(255,255,255),text_thickness=2)
-            tool.draw_button(send_button, "Send", thickness=cv2.FILLED,text_color=(0,0,255),color=(255,255,255),text_thickness=2)
+            tool.draw_button(cancel_button, "Cancel", thickness=cv2.FILLED, text_color=(
+                0, 0, 255), color=(255, 255, 255), text_thickness=2)
+            tool.draw_button(send_button, "Send", thickness=cv2.FILLED, text_color=(
+                0, 0, 255), color=(255, 255, 255), text_thickness=2)
 
             # 表示とマウスの設定
             cv2.imshow("send", tool.image)
