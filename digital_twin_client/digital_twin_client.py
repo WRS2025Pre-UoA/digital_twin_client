@@ -364,7 +364,7 @@ class DigitalTwinClientNode(Node):
                         "Environment", "Victim", "Debris",
                         ]
         result_values = [-100.0, self.pressure_value, self.rust_value,
-                         self.crack_value, self.temperature_value, self.bulb_image,
+                         self.crack_value, self.temperature_value, self.bulb_value,
                          self.photo_text, self.photo_text, self.photo_text]
 
         status_msg = String()
